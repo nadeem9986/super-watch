@@ -30,3 +30,22 @@ notifications or all calls are delivered; real iPhone testing remains needed.
 
 Original NWatch by Zak Kemble, ESP32-C3 rebuild for Huy Vector. GPLv3, see
 License.txt. Preserve attribution/license when redistributing this source.
+
+## ESP32 dev module port (SSD1306)
+
+`src/main_esp32.cpp` is a separate build of the same watch for a classic ESP32
+dev module with a 128x64 SSD1306 OLED, added after the C3 firmware above. The
+original C3 source (`src/main.cpp`) is unchanged; `src/CMakeLists.txt` picks
+the file that matches the build target, so each board keeps its own binary.
+
+Differences from the C3 version:
+
+- Display driver: SSD1306 (charge pump on, page mode, no SH1106 column offset)
+- OLED + DS3231 I2C: SDA=GPIO21, SCL=GPIO22, OLED address 0x3C
+- Buttons: LEFT=GPIO25, SELECT=GPIO26, RIGHT=GPIO27 (pullups to GND)
+- BLE advertises as "NWatch 32"; same ANCS notification firmware otherwise
+
+Build and flash with PlatformIO: `pio run -e esp32dev -t upload` (default env
+`esp32-c3-supermini` still builds the C3 firmware). Compile-checked only;
+display, buttons and iPhone pairing still need testing on real hardware.
+
