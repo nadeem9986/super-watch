@@ -81,8 +81,13 @@ static void advertise(bool slow) {
      * the primary advertisement so passive scanners can identify the watch. */
     uint8_t adv[]={2,0x01,0x06,17,0x15,
         0xd0,0x00,0x2d,0x12,0x1e,0x4b,0x0f,0xa4,0x99,0x4e,0xce,0xb5,0x31,0xf4,0x05,0x79};
+#if CONFIG_IDF_TARGET_ESP32
+    const uint8_t short_name[]={9,0x08,'N','W','a','t','c','h','3','2'};
+    const uint8_t full_name[]={10,0x09,'N','W','a','t','c','h',' ','3','2'};
+#else
     const uint8_t short_name[]={9,0x08,'N','W','a','t','c','h','C','3'};
     const uint8_t full_name[]={10,0x09,'N','W','a','t','c','h',' ','C','3'};
+#endif
     uint8_t primary[31];memcpy(primary,adv,sizeof(adv));memcpy(primary+sizeof(adv),short_name,sizeof(short_name));
     int rc=ble_gap_adv_set_data(primary,sizeof(primary));
     if(!rc) rc=ble_gap_adv_rsp_set_data(full_name,sizeof(full_name));
@@ -341,7 +346,13 @@ bool blePhoneInit(bool resetBonds) {
         ble_hs_cfg.sm_io_cap=BLE_HS_IO_NO_INPUT_OUTPUT;ble_hs_cfg.sm_bonding=1;ble_hs_cfg.sm_mitm=0;ble_hs_cfg.sm_sc=1;
         ble_hs_cfg.sm_our_key_dist=BLE_SM_PAIR_KEY_DIST_ENC|BLE_SM_PAIR_KEY_DIST_ID;
         ble_hs_cfg.sm_their_key_dist=BLE_SM_PAIR_KEY_DIST_ENC|BLE_SM_PAIR_KEY_DIST_ID;
-        ble_svc_gap_init();ble_svc_gatt_init();ble_svc_gap_device_name_set("NWatch C3");ble_svc_gap_device_appearance_set(0x00c0);
+        ble_svc_gap_init();ble_svc_gatt_init();ble_svc_gap_device_name_set(
+#if CONFIG_IDF_TARGET_ESP32
+        "NWatch 32"
+#else
+        "NWatch C3"
+#endif
+    );ble_svc_gap_device_appearance_set(0x00c0);
         ble_store_config_init();
         esp_err_t p0=esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT,ESP_PWR_LVL_N6);
         esp_err_t p1=esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV,ESP_PWR_LVL_N6);
