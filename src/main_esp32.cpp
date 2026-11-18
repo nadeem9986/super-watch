@@ -181,6 +181,7 @@ static uint8_t alarmH=7,alarmM=0;
 static uint8_t setH=12,setM=0;
 static uint8_t dateDay=1,dateMonth=10,dateDow=1;
 static uint16_t dateYear=2024;
+static uint32_t lastSecondsOfDay=UINT32_MAX; // midnight-wrap detector baseline
 static uint32_t clockBase=0,lastSave=0;
 static uint32_t lastInteraction=0;
 static bool torchBrightnessForced=false;
@@ -249,6 +250,22 @@ static bool rtcWriteByte(uint8_t reg,uint8_t value){
 static uint8_t calculateDow(uint16_t year,uint8_t month,uint8_t day){
   static const uint8_t offsets[]={0,3,2,5,0,3,5,1,4,6,2,4};uint16_t y=year-(month<3);
   uint8_t sundayFirst=(y+y/4-y/100+y/400+offsets[month-1]+day)%7;return (sundayFirst+6)%7;
+}
+static uint8_t daysInMonth(uint16_t year,uint8_t month){
+  static const uint8_t days[]={31,28,31,30,31,30,31,31,30,31,30,31};
+  if(month==2&&(year%4==0&&(year%100!=0||year%400==0)))return 29;
+  return days[month-1];
+}
+// With no DS3231 and no phone link nothing advanced the date at midnight:
+// the clock rolled to 00:00 but the watch kept showing yesterday's date.
+// advanceDateOneDay steps the software calendar; the caller only invokes it
+// on a genuine seconds-of-day wrap, never when an RTC or phone owns the date.
+static void advanceDateOneDay(){
+  dateDow=(dateDow+1)%7;
+  if(dateDay<daysInMonth(dateYear,dateMonth)){dateDay++;return;}
+  dateDay=1;
+  if(dateMonth<12){dateMonth++;return;}
+  dateMonth=1;dateYear++;
 }
 static bool rtcReadTime(uint8_t&hour,uint8_t&minute,uint8_t&second,uint8_t&day,uint8_t&month,uint16_t&year,bool&valid){
   uint8_t data[7],status;if(!rtcReadBytes(0x00,data,7)||!rtcReadBytes(0x0F,&status,1))return false;
@@ -328,7 +345,7 @@ static void processBlePhone(){
   BlePhoneTime phoneTime;
   if(blePhoneTakeTime(&phoneTime)){
     setH=phoneTime.hour;setM=phoneTime.minute;clockBase=millis()-uint32_t(phoneTime.second)*1000;
-    dateDay=phoneTime.day;dateMonth=phoneTime.month;dateYear=phoneTime.year;dateDow=calculateDow(dateYear,dateMonth,dateDay);
+    dateDay=phoneTime.day;dateMonth=phoneTime.month;dateYear=phoneTime.year;dateDow=calculateDow(dateYear,dateMonth,dateDay);lastSecondsOfDay=clockSeconds();
     rtcWriteCurrent();saveConfig();
   }
   BlePhoneNotification incoming;
@@ -883,7 +900,7 @@ static void handle(Key k){
   else if(screen==SETTIME){
     uint8_t h,m,s;getTime(h,m,s);int delta=k==RIGHT?1:k==LEFT?-1:0;
     if(delta){if(timeField==0){setH=(h+24+delta)%24;setM=m;clockBase=millis()-s*1000;}else if(timeField==1){setH=h;setM=(m+60+delta)%60;clockBase=millis()-s*1000;}else if(timeField==2)dateDay=1+(dateDay-1+31+delta)%31;else if(timeField==3)dateMonth=1+(dateMonth-1+12+delta)%12;else dateYear=constrain(int(dateYear)+delta,2024,2099);}
-    else{timeField++;if(timeField>=5){timeField=0;rtcWriteCurrent();saveConfig();}}
+    else{timeField++;if(timeField>=5){timeField=0;rtcWriteCurrent();saveConfig();lastSecondsOfDay=UINT32_MAX;}}
   }
   else if(screen==DISPSET){
     if(k==LEFT)cursor=(cursor+3)%4;else if(k==RIGHT)cursor=(cursor+1)%4;else{
@@ -1009,6 +1026,11 @@ void loop(){
   static uint32_t physics,lastDraw,lastAlarmMinute=UINT32_MAX;
   if(!bleQuiet.active&&millis()-physics>=25){physics=millis();updateBreakout();updateCar();}
   serviceRtc();
+  // Midnight wrap: 86399 -> ~0 within two seconds of 00:00. Small RTC/phone
+  // corrections land outside this window and never touch the date.
+  uint32_t secondsOfDay=clockSeconds();
+  if(lastSecondsOfDay!=UINT32_MAX&&secondsOfDay<120&&lastSecondsOfDay>86280&&screen!=SETTIME&&!(rtcPresent&&rtcTimeValid))advanceDateOneDay();
+  lastSecondsOfDay=secondsOfDay;
   uint32_t minute=clockSeconds()/60;if(alarmOn&&minute!=lastAlarmMinute&&minute%1440==uint32_t(alarmH)*60+alarmM){lastAlarmMinute=minute;invertDisplay=!invertDisplay;cmd(invertDisplay?0xA7:0xA6);}
   if(faceSavePending&&millis()-faceSaveAt>1800){saveConfig();faceSavePending=false;}
   if(millis()-lastSave>3600000UL)saveConfig();
