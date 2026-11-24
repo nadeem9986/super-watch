@@ -182,6 +182,7 @@ static uint8_t setH=12,setM=0;
 static uint8_t dateDay=1,dateMonth=10,dateDow=1;
 static uint16_t dateYear=2024;
 static uint32_t lastSecondsOfDay=UINT32_MAX; // midnight-wrap detector baseline
+static uint32_t alarmRingAt=0; // nonzero while the alarm flash window is active
 static uint32_t clockBase=0,lastSave=0;
 static uint32_t lastInteraction=0;
 static bool torchBrightnessForced=false;
@@ -1031,12 +1032,16 @@ void loop(){
   uint32_t secondsOfDay=clockSeconds();
   if(lastSecondsOfDay!=UINT32_MAX&&secondsOfDay<120&&lastSecondsOfDay>86280&&screen!=SETTIME&&!(rtcPresent&&rtcTimeValid))advanceDateOneDay();
   lastSecondsOfDay=secondsOfDay;
-  uint32_t minute=clockSeconds()/60;if(alarmOn&&minute!=lastAlarmMinute&&minute%1440==uint32_t(alarmH)*60+alarmM){lastAlarmMinute=minute;invertDisplay=!invertDisplay;cmd(invertDisplay?0xA7:0xA6);}
+  // Alarm: flash the inversion for 30s (any key dismisses) WITHOUT touching
+  // the persistent invertDisplay setting - the old code flipped it and the
+  // next saveConfig() silently stored the corruption to flash.
+  uint32_t minute=clockSeconds()/60;if(alarmOn&&minute!=lastAlarmMinute&&minute%1440==uint32_t(alarmH)*60+alarmM){lastAlarmMinute=minute;alarmRingAt=millis();wakeDisplay();}
+  if(alarmRingAt){if(key!=NONE||millis()-alarmRingAt>=30000){alarmRingAt=0;cmd(invertDisplay?0xA7:0xA6);}else cmd(((millis()-alarmRingAt)/500)%2?(invertDisplay?0xA7:0xA6):(invertDisplay?0xA6:0xA7));}
   if(faceSavePending&&millis()-faceSaveAt>1800){saveConfig();faceSavePending=false;}
   if(millis()-lastSave>3600000UL)saveConfig();
   // Battery build: 42 ms caps rendering at ~24 FPS. Animation durations,
   // button polling and BLE polling remain independent of the render cadence.
   if(!bleQuiet.active&&millis()-lastDraw>=42){lastDraw=millis();render();}
-  uint32_t timeout=sleepTimeoutMs();if(!notificationVisible&&timeout&&millis()-lastInteraction>=timeout)enterDeviceSleep();
+  uint32_t timeout=sleepTimeoutMs();if(!notificationVisible&&!alarmRingAt&&timeout&&millis()-lastInteraction>=timeout)enterDeviceSleep();
   delay(3);
 }
