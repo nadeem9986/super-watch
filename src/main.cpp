@@ -893,7 +893,11 @@ static void handle(Key k){
   else if(screen==TORCH){if(k==SELECT){if(torchStrobe<500)torchStrobe+=50*((torchStrobe/50)+1);else torchStrobe=0;torchLast=millis();}else goBack();}
   else if(screen==SETTIME){
     uint8_t h,m,s;getTime(h,m,s);int delta=k==RIGHT?1:k==LEFT?-1:0;
-    if(delta){if(timeField==0){setH=(h+24+delta)%24;setM=m;clockBase=millis()-s*1000;}else if(timeField==1){setH=h;setM=(m+60+delta)%60;clockBase=millis()-s*1000;}else if(timeField==2)dateDay=1+(dateDay-1+31+delta)%31;else if(timeField==3)dateMonth=1+(dateMonth-1+12+delta)%12;else dateYear=constrain(int(dateYear)+delta,2024,2099);}
+    // Date fields clamp to the real month length: DAY wraps within daysInMonth
+    // and editing MONTH or YEAR pulls an out-of-range day back (e.g. Jan 31 ->
+    // Feb 28), so the editor can no longer store Feb 31 or write an invalid
+    // date to the DS3231.
+    if(delta){if(timeField==0){setH=(h+24+delta)%24;setM=m;clockBase=millis()-s*1000;}else if(timeField==1){setH=h;setM=(m+60+delta)%60;clockBase=millis()-s*1000;}else if(timeField==2){uint8_t dim=daysInMonth(dateYear,dateMonth);dateDay=1+(dateDay-1+dim+delta)%dim;}else if(timeField==3){dateMonth=1+(dateMonth-1+12+delta)%12;uint8_t dim=daysInMonth(dateYear,dateMonth);if(dateDay>dim)dateDay=dim;}else{dateYear=constrain(int(dateYear)+delta,2024,2099);uint8_t dim=daysInMonth(dateYear,dateMonth);if(dateDay>dim)dateDay=dim;}}
     else{timeField++;if(timeField>=5){timeField=0;rtcWriteCurrent();saveConfig();lastSecondsOfDay=UINT32_MAX;}}
   }
   else if(screen==DISPSET){
